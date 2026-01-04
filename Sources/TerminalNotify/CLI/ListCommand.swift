@@ -25,7 +25,7 @@ struct ListCommand: ParsableCommand {
                 if let error = response.error {
                     FileHandle.standardError.write(Data("Error: \(error)\n".utf8))
                 }
-                throw ExitCode(rawValue: response.exitCode) ?? ExitCode.failure
+                throw ExitCode(rawValue: response.exitCode)
             }
 
             // Print notifications in tab-separated format
@@ -36,7 +36,14 @@ struct ListCommand: ParsableCommand {
             }
         } catch let error as HelperClient.ClientError {
             FileHandle.standardError.write(Data("Error: \(error.localizedDescription)\n".utf8))
-            throw ExitCode(rawValue: ExitCodes.helperNotRunning) ?? ExitCode.failure
+            let code: Int32
+            switch error {
+            case .helperNotRunning:
+                code = ExitCodes.helperNotRunning
+            case .connectionFailed, .communicationError:
+                code = ExitCodes.runtimeError
+            }
+            throw ExitCode(rawValue: code)
         }
     }
 }

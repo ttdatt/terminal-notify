@@ -5,6 +5,7 @@ import NotifyShared
 class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     private let center = UNUserNotificationCenter.current()
     private var pendingCallbacks: [String: (NotificationResponse) -> Void] = [:]
+    private var pendingGroupTokens: [String: String] = [:]
     private let callbackQueue = DispatchQueue(label: "notification.callbacks")
 
     override init() {
@@ -38,7 +39,46 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         if let execute = request.execute { userInfo["execute"] = execute }
         if let activate = request.activate { userInfo["activate"] = activate }
         userInfo["wait"] = request.wait
+
+        var storedCallbackToken: String?
+        var canceledCallback: ((NotificationResponse) -> Void)?
+
+        if let group = request.group {
+            callbackQueue.sync {
+                if request.wait {
+                    let newToken = UUID().uuidString
+
+                    if let existingToken = pendingGroupTokens[group] {
+                        pendingGroupTokens.removeValue(forKey: group)
+                        canceledCallback = pendingCallbacks.removeValue(forKey: existingToken)
+                    }
+
+                    pendingGroupTokens[group] = newToken
+                    pendingCallbacks[newToken] = completion
+                    storedCallbackToken = newToken
+                    userInfo["callbackToken"] = newToken
+                } else if let existingToken = pendingGroupTokens[group] {
+                    userInfo["callbackToken"] = existingToken
+                }
+            }
+        } else if request.wait {
+            let token = UUID().uuidString
+            callbackQueue.sync {
+                pendingCallbacks[token] = completion
+            }
+            storedCallbackToken = token
+            userInfo["callbackToken"] = token
+        }
+
         content.userInfo = userInfo
+
+        if let canceledCallback {
+            canceledCallback(NotificationResponse(
+                success: true,
+                exitCode: ExitCodes.success,
+                clickAction: .timeout
+            ))
+        }
 
         // Add content image as attachment
         if let imagePath = request.contentImage {
@@ -85,13 +125,6 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             trigger: nil  // Immediate delivery
         )
 
-        // If waiting for interaction, store callback
-        if request.wait {
-            callbackQueue.sync {
-                pendingCallbacks[identifier] = completion
-            }
-        }
-
         center.add(notificationRequest) { error in
             if let error = error {
                 let nsError = error as NSError
@@ -100,6 +133,15 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 // Provide helpful message for permission denied (UNErrorDomain code 1)
                 if nsError.domain == "UNErrorDomain" && nsError.code == 1 {
                     errorMessage = "Notifications not allowed. Please enable in System Settings > Notifications > Terminal Notify Helper"
+                }
+
+                if let token = storedCallbackToken {
+                    self.callbackQueue.sync {
+                        self.pendingCallbacks.removeValue(forKey: token)
+                        if let group = request.group, self.pendingGroupTokens[group] == token {
+                            self.pendingGroupTokens.removeValue(forKey: group)
+                        }
+                    }
                 }
 
                 completion(NotificationResponse(
@@ -188,14 +230,21 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         }
 
         // Call pending callback if waiting
+        let token = (userInfo["callbackToken"] as? String) ?? identifier
+        var callback: ((NotificationResponse) -> Void)?
         callbackQueue.sync {
-            if let callback = pendingCallbacks.removeValue(forKey: identifier) {
-                callback(NotificationResponse(
-                    success: true,
-                    exitCode: ExitCodes.success,
-                    clickAction: clickResult
-                ))
+            callback = pendingCallbacks.removeValue(forKey: token)
+            if pendingGroupTokens[identifier] == token {
+                pendingGroupTokens.removeValue(forKey: identifier)
             }
+        }
+
+        if let callback {
+            callback(NotificationResponse(
+                success: true,
+                exitCode: ExitCodes.success,
+                clickAction: clickResult
+            ))
         }
 
         completionHandler()

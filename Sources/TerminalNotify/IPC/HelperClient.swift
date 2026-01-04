@@ -28,6 +28,10 @@ class HelperClient {
     func send(_ request: NotificationRequest) throws -> NotificationResponse {
         // Ensure socket directory exists
         try? FileManager.default.createDirectory(at: Constants.socketDirectory, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: Constants.socketDirectory.path
+        )
 
         // Try to connect
         let socket = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
@@ -57,7 +61,13 @@ class HelperClient {
         }
 
         guard connectResult == 0 else {
-            throw ClientError.helperNotRunning
+            let connectErrno = errno
+            switch connectErrno {
+            case ENOENT, ECONNREFUSED:
+                throw ClientError.helperNotRunning
+            default:
+                throw ClientError.connectionFailed(String(cString: strerror(connectErrno)))
+            }
         }
 
         // Send request as JSON
@@ -66,26 +76,19 @@ class HelperClient {
 
         // Send length prefix (4 bytes, big endian)
         var length = UInt32(requestData.count).bigEndian
-        let lengthSent = withUnsafeBytes(of: &length) { ptr in
-            Darwin.send(socket, ptr.baseAddress!, 4, 0)
-        }
-        guard lengthSent == 4 else {
-            throw ClientError.communicationError("Failed to send request length")
+        try withUnsafeBytes(of: &length) { ptr in
+            try sendAll(socket: socket, buffer: ptr)
         }
 
         // Send request data
-        let dataSent = requestData.withUnsafeBytes { ptr in
-            Darwin.send(socket, ptr.baseAddress!, requestData.count, 0)
-        }
-        guard dataSent == requestData.count else {
-            throw ClientError.communicationError("Failed to send request data")
+        try requestData.withUnsafeBytes { ptr in
+            try sendAll(socket: socket, buffer: ptr)
         }
 
         // Receive response length
         var responseLengthBytes = [UInt8](repeating: 0, count: 4)
-        let lengthReceived = recv(socket, &responseLengthBytes, 4, 0)
-        guard lengthReceived == 4 else {
-            throw ClientError.communicationError("Failed to receive response length")
+        try responseLengthBytes.withUnsafeMutableBytes { ptr in
+            try recvAll(socket: socket, buffer: ptr)
         }
 
         let responseLength = Int(UInt32(bigEndian: responseLengthBytes.withUnsafeBytes { $0.load(as: UInt32.self) }))
@@ -95,14 +98,47 @@ class HelperClient {
 
         // Receive response data
         var responseData = Data(count: responseLength)
-        let dataReceived = responseData.withUnsafeMutableBytes { ptr in
-            recv(socket, ptr.baseAddress!, responseLength, 0)
-        }
-        guard dataReceived == responseLength else {
-            throw ClientError.communicationError("Failed to receive response data")
+        try responseData.withUnsafeMutableBytes { ptr in
+            try recvAll(socket: socket, buffer: ptr)
         }
 
         let decoder = JSONDecoder()
         return try decoder.decode(NotificationResponse.self, from: responseData)
+    }
+
+    private func sendAll(socket: Int32, buffer: UnsafeRawBufferPointer) throws {
+        var totalSent = 0
+        while totalSent < buffer.count {
+            let sent = Darwin.send(socket, buffer.baseAddress!.advanced(by: totalSent), buffer.count - totalSent, 0)
+            if sent > 0 {
+                totalSent += sent
+                continue
+            }
+            if sent == 0 {
+                throw ClientError.communicationError("Socket closed while sending")
+            }
+            if errno == EINTR {
+                continue
+            }
+            throw ClientError.communicationError(String(cString: strerror(errno)))
+        }
+    }
+
+    private func recvAll(socket: Int32, buffer: UnsafeMutableRawBufferPointer) throws {
+        var totalRead = 0
+        while totalRead < buffer.count {
+            let readCount = recv(socket, buffer.baseAddress!.advanced(by: totalRead), buffer.count - totalRead, 0)
+            if readCount > 0 {
+                totalRead += readCount
+                continue
+            }
+            if readCount == 0 {
+                throw ClientError.communicationError("Socket closed while receiving")
+            }
+            if errno == EINTR {
+                continue
+            }
+            throw ClientError.communicationError(String(cString: strerror(errno)))
+        }
     }
 }
