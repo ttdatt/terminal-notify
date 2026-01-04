@@ -9,10 +9,8 @@ public struct NotificationRequest: Codable {
     public let openURL: String?
     public let execute: String?
     public let activate: String?
-    public let appIcon: String?
     public let contentImage: String?
     public let group: String?
-    public let sender: String?
     public let interruptionLevel: String?  // passive, active, timeSensitive, critical
     public let relevanceScore: Double?     // 0.0 to 1.0 for notification summary priority
     public let wait: Bool
@@ -32,10 +30,8 @@ public struct NotificationRequest: Codable {
         openURL: String? = nil,
         execute: String? = nil,
         activate: String? = nil,
-        appIcon: String? = nil,
         contentImage: String? = nil,
         group: String? = nil,
-        sender: String? = nil,
         interruptionLevel: String? = nil,
         relevanceScore: Double? = nil,
         wait: Bool = false
@@ -48,10 +44,8 @@ public struct NotificationRequest: Codable {
         self.openURL = openURL
         self.execute = execute
         self.activate = activate
-        self.appIcon = appIcon
         self.contentImage = contentImage
         self.group = group
-        self.sender = sender
         self.interruptionLevel = interruptionLevel
         self.relevanceScore = relevanceScore
         self.wait = wait

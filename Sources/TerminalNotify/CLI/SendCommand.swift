@@ -32,9 +32,6 @@ struct SendCommand: ParsableCommand {
     var activate: String?
 
     // Customization
-    @Option(name: .customLong("appIcon"), help: "Path to custom app icon")
-    var appIcon: String?
-
     @Option(name: .customLong("contentImage"), help: "Path to content image attachment")
     var contentImage: String?
 
@@ -43,9 +40,6 @@ struct SendCommand: ParsableCommand {
     var group: String?
 
     // Advanced
-    @Option(name: .customLong("sender"), help: "Fake sender bundle ID")
-    var sender: String?
-
     @Option(name: .customLong("interruptionLevel"), help: "Notification priority: passive, active, timeSensitive, critical")
     var interruptionLevel: String?
 
@@ -71,10 +65,8 @@ struct SendCommand: ParsableCommand {
             openURL: openURL,
             execute: execute,
             activate: activate,
-            appIcon: appIcon,
             contentImage: contentImage,
             group: group,
-            sender: sender,
             interruptionLevel: interruptionLevel,
             relevanceScore: relevanceScore,
             wait: wait
