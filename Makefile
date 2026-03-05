@@ -6,6 +6,7 @@ BUILD_DIR = .build
 RELEASE_DIR = $(BUILD_DIR)/release
 APP_BUNDLE = $(RELEASE_DIR)/$(HELPER_NAME).app
 CLAUDE_ICON = Resources/claude-icon.png
+OPENCODE_ICON = Resources/opencode-icon.png
 
 all: build
 
@@ -26,6 +27,7 @@ package: release
 	cp $(RELEASE_DIR)/$(HELPER_NAME) $(APP_BUNDLE)/Contents/MacOS/
 	cp Resources/Info.plist $(APP_BUNDLE)/Contents/
 	cp $(CLAUDE_ICON) $(APP_BUNDLE)/Contents/Resources/
+	cp $(OPENCODE_ICON) $(APP_BUNDLE)/Contents/Resources/
 	@echo "Signing app bundle..."
 	codesign --force --deep --sign - $(APP_BUNDLE)
 	@echo "App bundle created at $(APP_BUNDLE)"
